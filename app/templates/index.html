@@ -11,25 +11,45 @@
     </div>
 </div>
 
+<div class="tabs-bar" role="tablist">
+    <div class="tabs">
+        <button class="tab active" role="tab" data-tab="overview">📊 Обзор</button>
+        <button class="tab" role="tab" data-tab="days">📅 Дни <span class="tab-count" id="tab-count-days"></span></button>
+        <button class="tab" role="tab" data-tab="templates">📋 Шаблоны <span class="tab-count" id="tab-count-templates"></span></button>
+    </div>
+    <div class="period-switch" id="period-switch">
+        <button data-period="7">7д</button>
+        <button data-period="30">30д</button>
+        <button data-period="90">90д</button>
+        <button data-period="all">Всё</button>
+    </div>
+</div>
+
+<div class="tab-panel active" id="tab-overview">
 <div class="stats-row">
     <div class="stat-card">
         <div class="stat-label">Тренировок</div>
         <div class="stat-value" id="stat-workouts">—</div>
+        <div class="stat-sub muted" id="stat-workouts-sub"></div>
     </div>
     <div class="stat-card">
         <div class="stat-label">Общий объём</div>
         <div class="stat-value" id="stat-volume">—</div>
+        <div class="stat-sub muted" id="stat-volume-sub"></div>
     </div>
     <div class="stat-card">
-        <div class="stat-label">Белок за всё время</div>
+        <div class="stat-label">Белок в день</div>
         <div class="stat-value" id="stat-protein">—</div>
+        <div class="stat-sub muted" id="stat-protein-sub"></div>
     </div>
     <div class="stat-card">
         <div class="stat-label">Текущий вес</div>
         <div class="stat-value" id="stat-weight">—</div>
+        <div class="stat-sub muted" id="stat-weight-sub"></div>
     </div>
 </div>
 
+<div class="charts-grid">
 <section class="chart-section">
     <div class="section-head">
         <h2>🏋️ Объём тренировок</h2>
@@ -43,7 +63,7 @@
 <section class="chart-section">
     <div class="section-head">
         <h2>🍽️ Белок по дням</h2>
-        <span class="muted">Кликни на столбец, чтобы открыть день</span>
+        <label class="inline-field">🎯 Цель <input type="number" id="protein-goal" min="0" max="500" placeholder="—"> г</label>
     </div>
     <div class="chart-wrap chart-wrap-tall">
         <canvas id="chart-protein"></canvas>
@@ -59,6 +79,26 @@
     </div>
 </section>
 
+<section class="chart-section">
+    <div class="section-head">
+        <h2>📈 Прогресс по упражнению</h2>
+        <div class="inline-controls">
+            <select id="exercise-select" aria-label="Упражнение"></select>
+            <select id="exercise-metric" aria-label="Метрика">
+                <option value="best">Лучший подход</option>
+                <option value="total">Всего повторений</option>
+            </select>
+        </div>
+    </div>
+    <div class="chart-wrap">
+        <canvas id="chart-exercise"></canvas>
+    </div>
+</section>
+</div>
+
+</div>
+
+<div class="tab-panel" id="tab-days">
 <section class="days-section">
     <div class="section-head">
         <h2>📅 Дни</h2>
@@ -67,6 +107,9 @@
     <div id="days-list" class="days-list"></div>
 </section>
 
+</div>
+
+<div class="tab-panel" id="tab-templates">
 <section class="chart-section templates-section">
     <div class="section-head">
         <h2>📋 Мои шаблоны</h2>
@@ -89,6 +132,8 @@
         </div>
     </div>
 </section>
+
+</div>
 
 <!-- Модалка дня -->
 <div class="modal-overlay" id="modal-overlay">
@@ -132,6 +177,21 @@
         <div class="modal-foot modal-foot-end">
             <button class="btn btn-secondary" onclick="closeExportModal()">Отмена</button>
             <button class="btn btn-primary" onclick="doExport()">📥 Скачать JSON</button>
+        </div>
+    </div>
+</div>
+
+<!-- Модалка шаблона -->
+<div class="modal-overlay" id="tpl-modal-overlay">
+    <div class="modal modal-sm">
+        <div class="modal-head">
+            <h2 id="tpl-modal-title">Шаблон</h2>
+            <button class="icon-btn" onclick="closeTemplateModal()">×</button>
+        </div>
+        <div class="modal-body" id="tpl-modal-body"></div>
+        <div class="modal-foot modal-foot-end">
+            <button class="btn btn-secondary" onclick="closeTemplateModal()">Отмена</button>
+            <button class="btn btn-primary" onclick="saveTemplateModal()">Сохранить</button>
         </div>
     </div>
 </div>

@@ -1,7 +1,8 @@
+from collections import defaultdict
 from datetime import date
 from typing import List, Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from . import models, schemas
 
@@ -33,12 +34,13 @@ def _get_meals(db: Session, day: date) -> List[models.Meal]:
 
 
 # ==================== read ====================
-def get_day(db: Session, day: date) -> schemas.DayOut:
-    workout = _get_workout(db, day)
-    body = _get_body(db, day)
-    meals = _get_meals(db, day)
+def _build_day(
+    day: date,
+    workout: Optional[models.WorkoutSession],
+    meals: List[models.Meal],
+    body: Optional[models.BodyMeasurement],
+) -> schemas.DayOut:
     total_protein = sum(m.protein_g for m in meals if m.protein_g is not None)
-
     return schemas.DayOut(
         date=day,
         workout=schemas.WorkoutOut.model_validate(workout) if workout else None,
@@ -48,19 +50,37 @@ def get_day(db: Session, day: date) -> schemas.DayOut:
     )
 
 
+def get_day(db: Session, day: date) -> schemas.DayOut:
+    return _build_day(day, _get_workout(db, day), _get_meals(db, day), _get_body(db, day))
+
+
 def list_days(db: Session) -> List[schemas.DayOut]:
-    dates: set[date] = set()
-    for (d,) in db.query(models.WorkoutSession.date).all():
-        dates.add(d)
-    for (d,) in db.query(models.Meal.date).all():
-        dates.add(d)
-    for (d,) in db.query(models.BodyMeasurement.date).all():
-        dates.add(d)
-    return [get_day(db, d) for d in sorted(dates, reverse=True)]
+    """Все дни за 3 запроса (+1 selectinload на упражнения) вместо N+1."""
+    workouts = {
+        w.date: w
+        for w in db.query(models.WorkoutSession).options(
+            selectinload(models.WorkoutSession.exercises)
+        )
+    }
+    bodies = {b.date: b for b in db.query(models.BodyMeasurement)}
+    meals: dict[date, List[models.Meal]] = defaultdict(list)
+    for m in db.query(models.Meal).order_by(models.Meal.id):
+        meals[m.date].append(m)
+
+    dates = set(workouts) | set(bodies) | set(meals)
+    return [
+        _build_day(d, workouts.get(d), meals.get(d, []), bodies.get(d))
+        for d in sorted(dates, reverse=True)
+    ]
 
 
 # ==================== write ====================
-def delete_day(db: Session, day: date) -> None:
+def _clear_day(db: Session, day: date) -> None:
+    """Удаляет данные дня в рамках текущей транзакции (без commit).
+
+    flush нужен, чтобы DELETE выполнился раньше последующих INSERT
+    (иначе упрёмся в unique по date у workout_sessions / body_measurements).
+    """
     w = _get_workout(db, day)
     if w:
         db.delete(w)
@@ -68,11 +88,16 @@ def delete_day(db: Session, day: date) -> None:
     b = _get_body(db, day)
     if b:
         db.delete(b)
+    db.flush()
+
+
+def delete_day(db: Session, day: date) -> None:
+    _clear_day(db, day)
     db.commit()
 
 
-def upsert_day(db: Session, day: date, payload: schemas.DayUpsert) -> schemas.DayOut:
-    delete_day(db, day)
+def _fill_day(db: Session, day: date, payload: schemas.DayUpsert) -> None:
+    _clear_day(db, day)
 
     if payload.workout and payload.workout.exercises:
         ws = models.WorkoutSession(date=day, notes=payload.workout.notes)
@@ -110,7 +135,16 @@ def upsert_day(db: Session, day: date, payload: schemas.DayUpsert) -> schemas.Da
             )
         )
 
-    db.commit()
+
+
+def upsert_day(db: Session, day: date, payload: schemas.DayUpsert) -> schemas.DayOut:
+    """Атомарно заменяет день: при ошибке старые данные остаются нетронутыми."""
+    try:
+        _fill_day(db, day, payload)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return get_day(db, day)
 
 

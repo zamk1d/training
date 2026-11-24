@@ -843,3 +843,95 @@ details pre {
     font-weight: 500;
     font-size: 14px;
 }
+
+/* ==================== Tabs ==================== */
+.tabs-bar {
+    position: sticky;
+    top: 60px;
+    z-index: 40;
+    margin: 0 -24px 20px;
+    padding: 8px 24px;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+}
+.tabs { display: flex; gap: 4px; overflow-x: auto; }
+.tab {
+    background: none;
+    border: none;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    padding: 8px 16px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background .15s, color .15s;
+}
+.tab:hover { background: var(--surface-2); color: var(--text); }
+.tab.active { background: var(--primary-soft); color: var(--primary); }
+.tab-count { margin-left: 4px; font-size: 11px; opacity: .7; font-variant-numeric: tabular-nums; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+.tab-panel > .days-section { margin-top: 0; }
+
+/* ==================== Month groups ==================== */
+.month-group > summary {
+    list-style: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin: 0;
+    padding: 12px 16px;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+.month-group > summary::-webkit-details-marker { display: none; }
+.month-group > summary:hover { color: var(--text); border-color: var(--border-strong); }
+.month-group[open] > summary { margin-bottom: 12px; }
+.month-title { font-size: 15px; font-weight: 600; text-transform: capitalize; }
+.month-title::before {
+    content: "▸";
+    display: inline-block;
+    margin-right: 8px;
+    color: var(--text-subtle);
+    transition: transform .15s;
+}
+.month-group[open] .month-title::before { transform: rotate(90deg); }
+
+@media (max-width: 640px) {
+    .tabs-bar { margin: 0 -16px 16px; padding: 8px 16px; }
+}
+
+/* ==================== Period / charts grid / misc ==================== */
+.tabs-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.period-switch { display: flex; gap: 2px; padding: 3px; background: var(--surface-3); border-radius: var(--radius-sm); flex-shrink: 0; }
+.period-switch button {
+    border: none; background: none; font: inherit; font-size: 12px; font-weight: 600;
+    color: var(--text-muted); padding: 5px 12px; border-radius: 8px; cursor: pointer;
+}
+.period-switch button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
+
+.charts-grid { display: grid; grid-template-columns: 1fr; gap: 20px; }
+.charts-grid .chart-section { margin-bottom: 0; min-width: 0; }
+@media (min-width: 1000px) { .charts-grid { grid-template-columns: 1fr 1fr; } }
+
+.stat-sub { margin-top: 2px; }
+.inline-field { flex-direction: row; align-items: center; gap: 8px; margin: 0; }
+.inline-field input { width: 80px; padding: 6px 10px; }
+.inline-controls { display: flex; gap: 8px; flex-wrap: wrap; }
+.inline-controls select { width: auto; padding: 6px 10px; }
+
+.ex-last {
+    margin-top: 10px; padding: 0; border: none; background: none; text-align: left;
+    font: inherit; font-size: 12px; color: var(--primary); cursor: pointer;
+}
+.ex-last:hover { text-decoration: underline; }
+.form-error { color: var(--danger); font-size: 12px; margin-top: 4px; }
+#tpl-modal-overlay { z-index: 120; }
+.template-item { cursor: pointer; }

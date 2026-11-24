@@ -2,36 +2,54 @@
 const state = {
     days: [],
     templates: { exercises: [], meals: [] },
-    charts: { workout: null, protein: null, weight: null },
+    charts: { workout: null, protein: null, weight: null, exercise: null },
+    period: localStorage.getItem('period') || '30',
+    goal: parseFloat(localStorage.getItem('goal')) || null,
 };
 
 // ==================== Загрузка ====================
 async function loadAll() {
-    const [days, workouts, protein, weight] = await Promise.all([
-        fetch('/api/days').then(r => r.json()),
-        fetch('/api/chart/workouts').then(r => r.json()),
-        fetch('/api/chart/protein').then(r => r.json()),
-        fetch('/api/chart/weight').then(r => r.json()),
-    ]);
-    await loadTemplates();
+    const [days] = await Promise.all([fetch('/api/days').then(r => r.json()), loadTemplates()]);
     state.days = days;
-    renderStats(workouts, protein, weight);
-    renderWorkoutChart(workouts);
-    renderProteinChart(protein);
-    renderWeightChart(weight);
+    renderStats();
+    renderExerciseControls();
+    renderCharts();
     renderDays(days);
     renderTemplatesManagement();
 }
 
-async function refreshChartsOnly() {
-    const [workouts, protein, weight] = await Promise.all([
-        fetch('/api/chart/workouts').then(r => r.json()),
-        fetch('/api/chart/protein').then(r => r.json()),
-        fetch('/api/chart/weight').then(r => r.json()),
-    ]);
-    renderWorkoutChart(workouts);
-    renderProteinChart(protein);
-    renderWeightChart(weight);
+async function refreshChartsOnly() { renderCharts(); }
+
+const sum = (a) => a.reduce((s, x) => s + x, 0);
+
+function periodDays() {  // по возрастанию даты, в пределах выбранного периода
+    const asc = [...state.days].reverse();
+    if (state.period === 'all') return asc;
+    const from = new Date();
+    from.setHours(0, 0, 0, 0);
+    from.setDate(from.getDate() - (+state.period - 1));
+    return asc.filter(d => new Date(d.date + 'T00:00:00') >= from);
+}
+function workoutSeries(days) {
+    return days.filter(d => d.workout && d.workout.exercises.length).map(d => ({
+        date: d.date,
+        total_reps: sum(d.workout.exercises.map(e => sum(e.reps_list))),
+        exercises: d.workout.exercises.map(e => ({ name: e.exercise_name, reps_list: e.reps_list, total: sum(e.reps_list) })),
+        notes: d.workout.notes,
+    }));
+}
+function proteinSeries(days) {
+    return days.filter(d => d.meals.length).map(d => ({ date: d.date, total_protein: d.total_protein, meals: d.meals }));
+}
+function weightSeries(days) {
+    return days.filter(d => d.body && d.body.weight_kg != null).map(d => ({ date: d.date, weight_kg: d.body.weight_kg }));
+}
+function renderCharts() {
+    const pd = periodDays();
+    renderWorkoutChart(workoutSeries(pd));
+    renderProteinChart(proteinSeries(pd));
+    renderWeightChart(weightSeries(pd));
+    renderExerciseChart(pd);
 }
 
 async function loadTemplates() {
@@ -62,7 +80,7 @@ function initTheme() {
         const next = cur === 'dark' ? 'light' : 'dark';
         localStorage.setItem('theme', next);
         apply(next);
-        await refreshChartsOnly();
+        if (document.getElementById('chart-workout')) await refreshChartsOnly();
     });
 }
 
@@ -90,14 +108,28 @@ function makeGradient(ctx, from, to, height = 400) {
 }
 
 // ==================== Stats ====================
-function renderStats(workouts, protein, weight) {
-    document.getElementById('stat-workouts').textContent = workouts.length;
-    document.getElementById('stat-volume').textContent =
-        workouts.reduce((s, w) => s + w.total_reps, 0).toLocaleString('ru-RU');
-    document.getElementById('stat-protein').textContent =
-        Math.round(protein.reduce((s, p) => s + p.total_protein, 0)).toLocaleString('ru-RU') + ' г';
-    const w = weight.length ? weight[weight.length - 1].weight_kg : null;
-    document.getElementById('stat-weight').textContent = w != null ? w + ' кг' : '—';
+function renderStats() {
+    const pd = periodDays();
+    const w = workoutSeries(pd);
+    const p = proteinSeries(pd).filter(x => x.total_protein > 0);
+    const per = state.period === 'all' ? 'за всё время' : `за ${state.period} дн.`;
+    const set = (id, v, sub) => {
+        document.getElementById('stat-' + id).textContent = v;
+        document.getElementById('stat-' + id + '-sub').textContent = sub;
+    };
+    const vol = sum(w.map(x => x.total_reps));
+    set('workouts', w.length, per);
+    set('volume', vol.toLocaleString('ru-RU'), w.length ? `≈${Math.round(vol / w.length)} за тренировку` : per);
+    const avg = p.length ? Math.round(sum(p.map(x => x.total_protein)) / p.length) : null;
+    set('protein', avg != null ? avg + ' г' : '—',
+        state.goal && p.length
+            ? `цель ${state.goal} г: ${p.filter(x => x.total_protein >= state.goal).length} из ${p.length} дн.`
+            : `в день, ${per}`);
+    const all = weightSeries([...state.days].reverse());
+    const wp = weightSeries(pd);
+    const delta = wp.length > 1 ? wp[wp.length - 1].weight_kg - wp[0].weight_kg : null;
+    set('weight', all.length ? all[all.length - 1].weight_kg + ' кг' : '—',
+        delta != null ? `${delta > 0 ? '+' : ''}${delta.toFixed(1)} кг ${per}` : 'последнее измерение');
 }
 
 // ==================== Utils ====================
@@ -237,7 +269,11 @@ function renderProteinChart(data) {
                 borderRadius: 8,
                 maxBarThickness: 60,
                 borderSkipped: false,
-            }],
+            }, ...(state.goal ? [{
+                type: 'line', label: 'Цель', data: data.map(() => state.goal),
+                borderColor: isDark() ? '#fbbf24' : '#d97706', borderDash: [6, 4],
+                borderWidth: 1.5, pointRadius: 0, datalabels: { display: false },
+            }] : [])],
         },
         plugins: [ChartDataLabels],
         options: {
@@ -274,6 +310,7 @@ function renderProteinChart(data) {
                         title: (items) => fmtDateLong(data[items[0].dataIndex].date),
                         label: (item) => {
                             const d = data[item.dataIndex];
+                            if (item.datasetIndex === 1) return `Цель: ${state.goal} г`;
                             const lines = [`Белок: ${d.total_protein} г`];
                             d.meals.forEach(m => {
                                 const desc = m.description || 'без описания';
@@ -374,12 +411,31 @@ function renderWeightChart(data) {
 // ==================== Days list ====================
 function renderDays(days) {
     document.getElementById('days-count').textContent = days.length ? `${days.length} с записями` : '';
+    document.getElementById('tab-count-days').textContent = days.length || '';
     const el = document.getElementById('days-list');
     if (!days.length) {
         el.innerHTML = '<div class="empty">Пока нет записей. Нажми «+ Добавить день» сверху.</div>';
         return;
     }
-    el.innerHTML = days.map(dayCardHTML).join('');
+    const open = el.querySelector('details')
+        ? new Set([...el.querySelectorAll('details[open]')].map(x => x.dataset.m))
+        : new Set([days[0].date.slice(0, 7)]);
+    const groups = new Map();
+    days.forEach(d => {
+        const k = d.date.slice(0, 7);
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(d);
+    });
+    el.innerHTML = [...groups].map(([k, list]) => {
+        const [y, m] = k.split('-').map(Number);
+        const title = new Date(y, m - 1, 1).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+        const workouts = list.filter(d => d.workout).length;
+        return `<details class="month-group" data-m="${k}" ${open.has(k) ? 'open' : ''}>
+            <summary><span class="month-title">${title}</span>
+            <span class="muted">${list.length} дн. · ${workouts} тренировок</span></summary>
+            <div class="days-list">${list.map(dayCardHTML).join('')}</div>
+        </details>`;
+    }).join('');
 }
 
 function dayCardHTML(day) {
@@ -506,19 +562,21 @@ async function doExport() {
 
 // ==================== Templates management ====================
 function renderTemplatesManagement() {
+    document.getElementById('tab-count-templates').textContent =
+        (state.templates.exercises.length + state.templates.meals.length) || '';
     const exList = document.getElementById('templates-exercises-list');
     if (exList) {
         if (!state.templates.exercises.length) {
             exList.innerHTML = '<div class="muted">Нет шаблонов упражнений</div>';
         } else {
             exList.innerHTML = state.templates.exercises.map(t => `
-                <div class="template-item">
+                <div class="template-item" onclick="openTemplateModal('exercise', ${t.id})">
                     <div class="template-item-info">
                         <div class="template-item-name">${escapeHtml(t.name)}</div>
                         <div class="template-item-detail">${t.default_reps_list.length} подходов: ${t.default_reps_list.join(' · ')}</div>
                     </div>
                     <button class="icon-btn-sm" title="Удалить"
-                            onclick="deleteExerciseTemplate(${t.id})">×</button>
+                            onclick="event.stopPropagation(); deleteExerciseTemplate(${t.id})">×</button>
                 </div>
             `).join('');
         }
@@ -534,57 +592,79 @@ function renderTemplatesManagement() {
                 if (t.default_protein_g != null) parts.push(`${t.default_protein_g} г белка`);
                 if (t.default_calories != null) parts.push(`${t.default_calories} ккал`);
                 return `
-                <div class="template-item">
+                <div class="template-item" onclick="openTemplateModal('meal', ${t.id})">
                     <div class="template-item-info">
                         <div class="template-item-name">${escapeHtml(t.name)}</div>
                         <div class="template-item-detail">${parts.join(' · ') || 'без значений'}</div>
                     </div>
                     <button class="icon-btn-sm" title="Удалить"
-                            onclick="deleteMealTemplate(${t.id})">×</button>
+                            onclick="event.stopPropagation(); deleteMealTemplate(${t.id})">×</button>
                 </div>`;
             }).join('');
         }
     }
 }
 
-async function addExerciseTemplatePrompt() {
-    const name = prompt('Название упражнения:');
-    if (!name || !name.trim()) return;
-    const repsStr = prompt('Повторы по подходам через запятую (например: 10,10,10,8):', '10,10,10');
-    if (!repsStr) return;
-    const reps = repsStr.split(',').map(s => parseInt(s.trim(), 10))
-        .filter(n => Number.isFinite(n) && n > 0);
-    if (!reps.length) { alert('Нужен хотя бы один подход'); return; }
+function addExerciseTemplatePrompt() { openTemplateModal('exercise'); }
+function addMealTemplatePrompt() { openTemplateModal('meal'); }
 
-    const res = await fetch('/api/templates/exercises', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), default_reps_list: reps }),
-    });
-    if (!res.ok) { alert('Ошибка создания шаблона'); return; }
-    await loadTemplates();
-    renderTemplatesManagement();
-    renderTemplateChips();
+let tplCtx = null;
+function openTemplateModal(kind, id = null, pre = null) {
+    const list = kind === 'exercise' ? state.templates.exercises : state.templates.meals;
+    const t = id != null ? list.find(x => x.id === id) : null;
+    tplCtx = { kind, id, oldName: t?.name };
+    const name = t?.name ?? pre?.name ?? '';
+    document.getElementById('tpl-modal-title').textContent =
+        `${t ? 'Изменить' : 'Новый'} шаблон: ${kind === 'exercise' ? 'упражнение' : 'еда'}`;
+    document.getElementById('tpl-modal-body').innerHTML =
+        `<label>Название <input type="text" id="tpl-name" value="${escapeHtml(name)}"></label>` +
+        (kind === 'exercise'
+            ? `<label>Повторы по подходам через запятую
+                <input type="text" id="tpl-reps" placeholder="10, 10, 8"
+                       value="${escapeHtml((t?.default_reps_list ?? pre?.reps ?? [10, 10, 10]).join(', '))}"></label>`
+            : `<div class="grid-2">
+                <label>Белок, г <input type="number" id="tpl-protein" step="0.1" min="0" value="${t?.default_protein_g ?? pre?.protein ?? ''}"></label>
+                <label>Ккал <input type="number" id="tpl-cal" min="0" value="${t?.default_calories ?? pre?.calories ?? ''}"></label>
+               </div>`) +
+        '<div class="form-error hidden" id="tpl-error"></div>';
+    document.getElementById('tpl-modal-overlay').classList.add('active');
+    document.getElementById('tpl-name').focus();
 }
 
-async function addMealTemplatePrompt() {
-    const name = prompt('Название (например: "Творог 200г"):');
-    if (!name || !name.trim()) return;
-    const proteinStr = prompt('Белок (г), можно оставить пустым:', '');
-    const calStr = prompt('Калории (ккал), можно оставить пустым:', '');
+function closeTemplateModal() {
+    document.getElementById('tpl-modal-overlay').classList.remove('active');
+}
 
-    const payload = {
-        name: name.trim(),
-        default_protein_g: proteinStr ? parseFloat(proteinStr) : null,
-        default_calories: calStr ? parseFloat(calStr) : null,
+async function saveTemplateModal() {
+    const { kind, id, oldName } = tplCtx;
+    const err = (m) => {
+        const e = document.getElementById('tpl-error');
+        e.textContent = m;
+        e.classList.remove('hidden');
     };
-
-    const res = await fetch('/api/templates/meals', {
+    const name = document.getElementById('tpl-name').value.trim();
+    if (!name) return err('Укажи название');
+    let url, payload;
+    if (kind === 'exercise') {
+        const reps = document.getElementById('tpl-reps').value.split(',')
+            .map(s => parseInt(s.trim(), 10)).filter(Number.isFinite);
+        if (!reps.length || reps.some(n => n < 1 || n > 1000)) return err('Повторы — целые числа от 1 до 1000 через запятую');
+        url = '/api/templates/exercises';
+        payload = { name, default_reps_list: reps };
+    } else {
+        const p = document.getElementById('tpl-protein').value;
+        const c = document.getElementById('tpl-cal').value;
+        url = '/api/templates/meals';
+        payload = { name, default_protein_g: p ? parseFloat(p) : null, default_calories: c ? parseFloat(c) : null };
+    }
+    const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
     });
-    if (!res.ok) { alert('Ошибка создания шаблона'); return; }
+    if (!res.ok) return err('Не удалось сохранить — проверь значения');
+    if (id != null && oldName !== name) await fetch(`${url}/${id}`, { method: 'DELETE' });  // переименование
+    closeTemplateModal();
     await loadTemplates();
     renderTemplatesManagement();
     renderTemplateChips();
@@ -663,8 +743,9 @@ async function openDayModal(dateISO) {
 }
 
 function openNewDayModal() {
-    const today = new Date().toISOString().slice(0, 10);
-    renderModal(today, null);
+    const n = new Date();
+    const today = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+    renderModal(today, state.days.find(d => d.date === today) || null);
     modalOverlay().classList.add('active');
 }
 
@@ -702,6 +783,7 @@ function renderModal(dateISO, day) {
                 <div class="template-chips" id="template-chips-exercises"></div>
                 <div id="modal-exercises"></div>
                 <button type="button" class="btn btn-secondary btn-sm" onclick="addExerciseRow()">+ Упражнение</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="copyLastWorkout()">↺ Как в прошлый раз</button>
             </div>
         </section>
 
@@ -732,6 +814,8 @@ function renderModal(dateISO, day) {
 
     if (workout) workout.exercises.forEach(ex => addExerciseRow(ex.exercise_name, ex.reps_list));
     meals.forEach(m => addMealRow(m));
+    document.getElementById('modal-date').addEventListener('change',
+        () => document.querySelectorAll('.exercise-edit-row').forEach(updateLastHint));
 
     document.getElementById('modal-workout-toggle').addEventListener('change', (e) => {
         document.getElementById('modal-workout-body').classList.toggle('hidden', !e.target.checked);
@@ -764,6 +848,7 @@ function addExerciseRow(name = '', repsList = [10]) {
             <div class="sets-container"></div>
             <button type="button" class="btn btn-secondary btn-sm add-set-btn">+ подход</button>
         </div>
+        <button type="button" class="ex-last hidden"></button>
     `;
     const setsContainer = row.querySelector('.sets-container');
     repsList.forEach(r => setsContainer.appendChild(makeSetInput(r)));
@@ -772,6 +857,12 @@ function addExerciseRow(name = '', repsList = [10]) {
     };
     row.querySelector('.remove-btn').onclick = () => row.remove();
     row.querySelector('.save-template-btn').onclick = () => saveRowAsExerciseTemplate(row);
+    row.querySelector('.ex-name-input').addEventListener('input', () => updateLastHint(row));
+    row.querySelector('.ex-last').onclick = (e) => {
+        setsContainer.innerHTML = '';
+        e.currentTarget._reps.forEach(r => setsContainer.appendChild(makeSetInput(r)));
+    };
+    updateLastHint(row);
     container.appendChild(row);
 }
 
@@ -786,26 +877,12 @@ function makeSetInput(value) {
     return wrap;
 }
 
-async function saveRowAsExerciseTemplate(row) {
+function saveRowAsExerciseTemplate(row) {
     const name = row.querySelector('.ex-name-input').value.trim();
-    if (!name) { alert('Сначала впиши название упражнения'); return; }
     const reps = [...row.querySelectorAll('.set-input')]
-        .map(i => parseInt(i.value, 10))
-        .filter(r => Number.isFinite(r) && r > 0);
-    if (!reps.length) { alert('Добавь хотя бы один подход'); return; }
-
-    const templateName = prompt('Название шаблона:', name);
-    if (!templateName || !templateName.trim()) return;
-
-    const res = await fetch('/api/templates/exercises', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: templateName.trim(), default_reps_list: reps }),
-    });
-    if (!res.ok) { alert('Ошибка сохранения шаблона'); return; }
-    await loadTemplates();
-    renderTemplateChips();
-    renderTemplatesManagement();
+        .map(i => parseInt(i.value, 10)).filter(r => Number.isFinite(r) && r > 0);
+    if (!name || !reps.length) { alert('Впиши название и хотя бы один подход'); return; }
+    openTemplateModal('exercise', null, { name, reps });
 }
 
 // ==================== Meal rows ====================
@@ -825,28 +902,14 @@ function addMealRow(meal = {}) {
     container.appendChild(row);
 }
 
-async function saveRowAsMealTemplate(row) {
-    const desc = row.querySelector('.meal-desc').value.trim();
-    if (!desc) { alert('Сначала впиши описание еды'); return; }
-    const protein = row.querySelector('.meal-protein').value;
-    const cal = row.querySelector('.meal-cal').value;
-
-    const templateName = prompt('Название шаблона:', desc);
-    if (!templateName || !templateName.trim()) return;
-
-    const res = await fetch('/api/templates/meals', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            name: templateName.trim(),
-            default_protein_g: protein ? parseFloat(protein) : null,
-            default_calories: cal ? parseFloat(cal) : null,
-        }),
+function saveRowAsMealTemplate(row) {
+    const name = row.querySelector('.meal-desc').value.trim();
+    if (!name) { alert('Сначала впиши описание еды'); return; }
+    openTemplateModal('meal', null, {
+        name,
+        protein: row.querySelector('.meal-protein').value,
+        calories: row.querySelector('.meal-cal').value,
     });
-    if (!res.ok) { alert('Ошибка сохранения шаблона'); return; }
-    await loadTemplates();
-    renderTemplateChips();
-    renderTemplatesManagement();
 }
 
 // ==================== Save day ====================
@@ -906,9 +969,8 @@ async function saveDay(originalDate) {
         body,
     };
 
-    if (newDate !== originalDate) {
-        await fetch(`/api/day/${originalDate}`, { method: 'DELETE' });
-    }
+    if (newDate !== originalDate && state.days.some(d => d.date === newDate)
+        && !confirm('На эту дату уже есть запись — она будет заменена. Продолжить?')) return;
 
     const res = await fetch(`/api/day/${newDate}`, {
         method: 'POST',
@@ -923,12 +985,167 @@ async function saveDay(originalDate) {
         return;
     }
 
+    if (newDate !== originalDate && state.days.some(d => d.date === originalDate)) {
+        await fetch(`/api/day/${originalDate}`, { method: 'DELETE' });
+    }
+
     closeModal();
     await loadAll();
 }
 
 // ==================== Init ====================
+function switchTab(name) {
+    if (!document.getElementById('tab-' + name)) name = 'overview';
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    document.getElementById('period-switch').classList.toggle('hidden', name !== 'overview');
+    if (name === 'overview') Object.values(state.charts).forEach(c => c && c.resize());
+}
+
 window.addEventListener('DOMContentLoaded', () => {
     initTheme();
+    if (!document.getElementById('days-list')) return;  // страница импорта
+    document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+        history.replaceState(null, '', t.dataset.tab === 'overview' ? location.pathname : '#' + t.dataset.tab);
+        switchTab(t.dataset.tab);
+    }));
+    window.addEventListener('hashchange', () => switchTab(location.hash.slice(1)));
+    switchTab(location.hash.slice(1));
+
+    document.querySelectorAll('#period-switch [data-period]').forEach(b => {
+        b.classList.toggle('active', b.dataset.period === state.period);
+        b.addEventListener('click', () => {
+            state.period = b.dataset.period;
+            localStorage.setItem('period', state.period);
+            document.querySelectorAll('#period-switch [data-period]').forEach(x => x.classList.toggle('active', x === b));
+            renderStats();
+            renderCharts();
+        });
+    });
+    const goal = document.getElementById('protein-goal');
+    goal.value = state.goal ?? '';
+    goal.addEventListener('change', () => {
+        state.goal = parseFloat(goal.value) || null;
+        state.goal ? localStorage.setItem('goal', state.goal) : localStorage.removeItem('goal');
+        renderStats();
+        renderProteinChart(proteinSeries(periodDays()));
+    });
+    ['exercise-select', 'exercise-metric'].forEach(id =>
+        document.getElementById(id).addEventListener('change', () => {
+            localStorage.setItem('exercise', document.getElementById('exercise-select').value);
+            renderExerciseChart(periodDays());
+        }));
+    document.getElementById('tpl-modal-overlay').addEventListener('click', (e) => {
+        if (e.target.id === 'tpl-modal-overlay') closeTemplateModal();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        ['tpl-modal-overlay', 'export-modal-overlay', 'modal-overlay'].some(id => {
+            const el = document.getElementById(id);
+            if (!el.classList.contains('active')) return false;
+            el.classList.remove('active');
+            return true;
+        });
+    });
     loadAll();
 });
+// ==================== Подсказки «прошлый раз» ====================
+function lastResult(name, before) {
+    const n = name.trim().toLowerCase();
+    if (!n) return null;
+    for (const d of state.days) {  // дни идут от новых к старым
+        if (d.date >= before) continue;
+        const ex = d.workout?.exercises.find(e => e.exercise_name.trim().toLowerCase() === n);
+        if (ex) return { date: d.date, reps: ex.reps_list };
+    }
+    return null;
+}
+
+function updateLastHint(row) {
+    const btn = row.querySelector('.ex-last');
+    const last = lastResult(row.querySelector('.ex-name-input').value, document.getElementById('modal-date').value);
+    btn.classList.toggle('hidden', !last);
+    if (!last) return;
+    btn._reps = last.reps;
+    btn.textContent = `Прошлый раз (${fmtDate(last.date)}): ${last.reps.join(' · ')} — подставить`;
+}
+
+function copyLastWorkout() {
+    const before = document.getElementById('modal-date').value;
+    const d = state.days.find(x => x.date < before && x.workout?.exercises.length);
+    if (!d) { alert('Предыдущих тренировок нет'); return; }
+    d.workout.exercises.forEach(e => addExerciseRow(e.exercise_name, e.reps_list));
+}
+
+// ==================== Прогресс по упражнению ====================
+function renderExerciseControls() {
+    const sel = document.getElementById('exercise-select');
+    const counts = new Map();
+    state.days.forEach(d => d.workout?.exercises.forEach(e => {
+        const k = e.exercise_name.trim().toLowerCase();
+        const o = counts.get(k) || { name: e.exercise_name.trim(), n: 0 };
+        o.n++;
+        counts.set(k, o);
+    }));
+    const names = [...counts.values()].sort((a, b) => b.n - a.n).map(o => o.name);
+    const cur = sel.value || localStorage.getItem('exercise');
+    sel.innerHTML = names.map(n => `<option>${escapeHtml(n)}</option>`).join('');
+    if (names.includes(cur)) sel.value = cur;
+}
+
+function renderExerciseChart(pd) {
+    const canvas = document.getElementById('chart-exercise');
+    const ctx = canvas.getContext('2d');
+    if (state.charts.exercise) state.charts.exercise.destroy();
+    state.charts.exercise = null;
+    const key = document.getElementById('exercise-select').value.trim().toLowerCase();
+    const best = document.getElementById('exercise-metric').value === 'best';
+    const rows = pd.map(d => {
+        const reps = (d.workout?.exercises || [])
+            .filter(e => e.exercise_name.trim().toLowerCase() === key)
+            .flatMap(e => e.reps_list);
+        return reps.length ? { date: d.date, reps, v: best ? Math.max(...reps) : sum(reps) } : null;
+    }).filter(Boolean);
+
+    const t = chartTheme();
+    if (!rows.length) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = t.tick;
+        ctx.textAlign = 'center';
+        ctx.font = `${13 * (window.devicePixelRatio || 1)}px sans-serif`;
+        ctx.fillText('Нет данных за период', canvas.width / 2, canvas.height / 2);
+        return;
+    }
+    const color = isDark() ? '#a78bfa' : '#8b5cf6';
+    const label = best ? 'Лучший подход' : 'Всего повторений';
+    state.charts.exercise = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: rows.map(r => fmtDate(r.date)),
+            datasets: [{
+                label, data: rows.map(r => r.v),
+                borderColor: color, backgroundColor: color, borderWidth: 2.5,
+                tension: .3, pointRadius: 4, pointHoverRadius: 6,
+            }],
+        },
+        options: {
+            ...CHART_OPTS,
+            onClick: (e, els) => { if (els.length) openDayModal(rows[els[0].index].date); },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: t.tooltipBg, borderColor: t.tooltipBorder, borderWidth: 1,
+                    padding: 12, cornerRadius: 10, displayColors: false,
+                    callbacks: {
+                        title: (i) => fmtDateLong(rows[i[0].dataIndex].date),
+                        label: (i) => [`${label}: ${i.parsed.y}`, `Подходы: ${rows[i.dataIndex].reps.join(' · ')}`],
+                    },
+                },
+            },
+            scales: {
+                x: { ticks: { color: t.tick, font: { size: 11 } }, grid: { display: false }, border: { display: false } },
+                y: { beginAtZero: true, ticks: { color: t.tick, font: { size: 11 } }, grid: { color: t.grid }, border: { display: false } },
+            },
+        },
+    });
+}
