@@ -31,7 +31,7 @@ Python 3.11+, FastAPI, SQLAlchemy 2, Pydantic 2, Jinja2, SQLite. Фронтен�
 ## Быстрый старт
 
 ```bash
-git clone <url-репозитория> sport-tracker
+git clone https://github.com/zamk1d/training sport-tracker
 cd sport-tracker
 
 # через uv
