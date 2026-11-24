@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}Импорт JSON{% endblock %}
+
+{% block content %}
+<h1>Импорт данных из JSON</h1>
+
+<section class="chart-section">
+    <p class="muted">
+        Любой блок (<code>exercises</code>, <code>meals</code>, <code>body</code>) может быть пустым или отсутствовать —
+        это нормально, если данные не сохранились. Упражнения поддерживают как новый формат <code>reps_list</code>
+        (разные повторы по подходам), так и старый <code>sets</code>+<code>reps</code>.
+    </p>
+
+    <details>
+        <summary>Пример формата</summary>
+<pre>{
+  "days": [
+    {
+      "date": "2025-01-15",
+      "is_workout_day": true,
+      "workout_notes": "Тяжело, но сделал",
+      "exercises": [
+        {"exercise_name": "Классические отжимания", "reps_list": [12, 10, 8]},
+        {"exercise_name": "Алмазные отжимания", "reps_list": [8, 8, 6]}
+      ],
+      "meals": [
+        {"date": "2025-01-15", "description": "Омлет из 3 яиц", "protein_g": 20},
+        {"date": "2025-01-15", "description": "Курица с гречкой", "protein_g": 40}
+      ],
+      "body": {"date": "2025-01-15", "weight_kg": 67.2, "height_cm": 176}
+    },
+    {
+      "date": "2025-01-16",
+      "is_workout_day": false,
+      "meals": [
+        {"date": "2025-01-16", "description": "Творог 200г", "protein_g": 36}
+      ]
+    }
+  ]
+}</pre>
+    </details>
+
+    <label style="margin-top: 16px;">JSON
+        <textarea id="json-input" rows="18" placeholder='{"days": [...]}'></textarea>
+    </label>
+
+    <div class="import-actions">
+        <button id="import-btn" class="btn btn-primary">Импортировать</button>
+        <span id="import-status" class="muted"></span>
+    </div>
+
+    <div id="import-result" class="import-result hidden"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('import-btn').addEventListener('click', async () => {
+    const status = document.getElementById('import-status');
+    const resultBox = document.getElementById('import-result');
+    const raw = document.getElementById('json-input').value.trim();
+
+    status.textContent = '';
+    resultBox.classList.add('hidden');
+
+    if (!raw) { status.textContent = 'Вставь JSON.'; return; }
+
+    let payload;
+    try { payload = JSON.parse(raw); }
+    catch (e) { status.textContent = '❌ Ошибка парсинга JSON: ' + e.message; return; }
+
+    status.textContent = 'Импорт...';
+    const res = await fetch('/api/import/json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        status.textContent = '❌ Ошибка импорта';
+        resultBox.innerHTML = `<pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+    } else {
+        status.textContent = '✅ Готово';
+        resultBox.innerHTML = `
+            <p><strong>Создано дней:</strong> ${data.created}</p>
+            ${data.skipped.length
+                ? `<p><strong>Пропущено:</strong></p><ul>${data.skipped.map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ul>`
+                : ''}
+        `;
+    }
+    resultBox.classList.remove('hidden');
+});
+
+function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+</script>
+{% endblock %}

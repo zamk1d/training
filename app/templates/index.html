@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+
+{% block title %}Дашборд — Sport Tracker{% endblock %}
+
+{% block content %}
+<div class="dashboard-header">
+    <h1>Твой прогресс</h1>
+    <div class="dashboard-actions">
+        <button class="btn btn-secondary" onclick="openExportModal()">📥 Экспорт</button>
+        <button class="btn btn-primary" onclick="openNewDayModal()">+ Добавить день</button>
+    </div>
+</div>
+
+<div class="stats-row">
+    <div class="stat-card">
+        <div class="stat-label">Тренировок</div>
+        <div class="stat-value" id="stat-workouts">—</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Общий объём</div>
+        <div class="stat-value" id="stat-volume">—</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Белок за всё время</div>
+        <div class="stat-value" id="stat-protein">—</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Текущий вес</div>
+        <div class="stat-value" id="stat-weight">—</div>
+    </div>
+</div>
+
+<section class="chart-section">
+    <div class="section-head">
+        <h2>🏋️ Объём тренировок</h2>
+        <span class="muted">Кликни на столбец, чтобы открыть день · тултип — детали</span>
+    </div>
+    <div class="chart-wrap chart-wrap-tall">
+        <canvas id="chart-workout"></canvas>
+    </div>
+</section>
+
+<section class="chart-section">
+    <div class="section-head">
+        <h2>🍽️ Белок по дням</h2>
+        <span class="muted">Кликни на столбец, чтобы открыть день</span>
+    </div>
+    <div class="chart-wrap chart-wrap-tall">
+        <canvas id="chart-protein"></canvas>
+    </div>
+</section>
+
+<section class="chart-section">
+    <div class="section-head">
+        <h2>⚖️ Вес тела</h2>
+    </div>
+    <div class="chart-wrap">
+        <canvas id="chart-weight"></canvas>
+    </div>
+</section>
+
+<section class="days-section">
+    <div class="section-head">
+        <h2>📅 Дни</h2>
+        <span class="muted" id="days-count"></span>
+    </div>
+    <div id="days-list" class="days-list"></div>
+</section>
+
+<section class="chart-section templates-section">
+    <div class="section-head">
+        <h2>📋 Мои шаблоны</h2>
+        <span class="muted">Создать можно здесь или нажав 💾 на строке в форме дня</span>
+    </div>
+    <div class="templates-grid">
+        <div>
+            <div class="templates-head">
+                <h3>🏋️ Упражнения</h3>
+                <button class="btn btn-secondary btn-sm" onclick="addExerciseTemplatePrompt()">+ Шаблон</button>
+            </div>
+            <div id="templates-exercises-list"></div>
+        </div>
+        <div>
+            <div class="templates-head">
+                <h3>🍽️ Еда</h3>
+                <button class="btn btn-secondary btn-sm" onclick="addMealTemplatePrompt()">+ Шаблон</button>
+            </div>
+            <div id="templates-meals-list"></div>
+        </div>
+    </div>
+</section>
+
+<!-- Модалка дня -->
+<div class="modal-overlay" id="modal-overlay">
+    <div class="modal">
+        <div class="modal-head">
+            <h2 id="modal-title">День</h2>
+            <button class="icon-btn" onclick="closeModal()">×</button>
+        </div>
+        <div class="modal-body" id="modal-body"></div>
+        <div class="modal-foot">
+            <button class="btn btn-danger" id="btn-delete">Удалить день</button>
+            <button class="btn btn-primary" id="btn-save">Сохранить</button>
+        </div>
+    </div>
+</div>
+
+<!-- Модалка экспорта -->
+<div class="modal-overlay" id="export-modal-overlay">
+    <div class="modal modal-sm">
+        <div class="modal-head">
+            <h2>📥 Экспорт данных</h2>
+            <button class="icon-btn" onclick="closeExportModal()">×</button>
+        </div>
+        <div class="modal-body">
+            <p class="muted" style="margin: 0 0 16px;">
+                Выбери, что включить в JSON-файл. Можно комбинировать.
+            </p>
+            <label class="toggle">
+                <input type="checkbox" id="export-workouts" checked>
+                <span>🏋️ Тренировки</span>
+            </label>
+            <label class="toggle">
+                <input type="checkbox" id="export-food">
+                <span>🍽️ Питание</span>
+            </label>
+            <label class="toggle">
+                <input type="checkbox" id="export-body">
+                <span>⚖️ Тело (вес, рост)</span>
+            </label>
+        </div>
+        <div class="modal-foot modal-foot-end">
+            <button class="btn btn-secondary" onclick="closeExportModal()">Отмена</button>
+            <button class="btn btn-primary" onclick="doExport()">📥 Скачать JSON</button>
+        </div>
+    </div>
+</div>
+
+<datalist id="exercise-suggestions">
+    <option value="Классические отжимания">
+    <option value="Алмазные отжимания">
+    <option value="Широкие отжимания">
+    <option value="Отжимания с наклоном">
+    <option value="Приседания">
+    <option value="Выпады">
+    <option value="Планка">
+    <option value="Подтягивания">
+    <option value="Отжимания на брусьях">
+    <option value="Берпи">
+</datalist>
+{% endblock %}
